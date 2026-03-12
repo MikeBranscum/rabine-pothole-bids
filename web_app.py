@@ -119,4 +119,29 @@ if st.button("Submit Request", type="primary"):
             sheet = client.open_by_url(st.secrets["private_gsheet_url"]).sheet1
             
             # 2. Process Data
-            for index, row in
+            for index, row in edited_df.iterrows():
+                street = str(row["Street"]).strip()
+                if street and street != "nan":
+                    state = str(row["State"]).strip()
+                    final_price = calculate_price_per_sf(active_db, state, datetime.now().month)
+                    
+                    if final_price:
+                        sheet.append_row([
+                            timestamp, requested_by, email, street, 
+                            str(row["City"]).strip(), state, str(row["Zip_Code"]).strip(), 
+                            str(row["Priority"]).strip(), final_price
+                        ])
+                        valid_location_count += 1
+            
+            # 3. Fire the Email Alert
+            try:
+                send_email_alert(requested_by, email, valid_location_count)
+            except Exception as email_err:
+                print(f"Email failed to send: {email_err}") # Fails silently for the client
+            
+            st.success("Request submitted successfully! We have received your information.")
+            
+        except Exception as e:
+            st.error("A connection error occurred. Please contact support.")
+            
+        active_db.close()
