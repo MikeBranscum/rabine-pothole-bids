@@ -14,10 +14,11 @@ st.set_page_config(page_title="Rabine America", layout="centered")
 
 # --- EMAIL ALERT ENGINE ---
 def send_email_alert(client_name, client_email, location_count):
-    """Silently sends an email notification to your inbox when a request is logged."""
+    """Silently sends an email notification to the recipients listed in secrets."""
     sender_email = st.secrets["email"]["sender_address"]
     sender_password = st.secrets["email"]["app_password"]
-    recipient_email = st.secrets["email"]["receiver_address"]
+    # Pulls the comma-separated string of emails from your secrets
+    recipient_emails = st.secrets["email"]["receiver_address"]
 
     subject = f"New Request Logged - {client_name}"
     body = f"""
@@ -32,7 +33,7 @@ def send_email_alert(client_name, client_email, location_count):
 
     msg = MIMEMultipart()
     msg['From'] = formataddr(("Rabine America - Quote Request", sender_email)) 
-    msg['To'] = recipient_email
+    msg['To'] = recipient_emails 
     msg['Subject'] = subject
     msg.attach(MIMEText(body, 'plain'))
 
@@ -89,7 +90,7 @@ with col2:
 st.subheader("Locations")
 st.markdown("Click the **+** icon at the bottom of the table to add more entries.")
 
-# Priority column removed. "#" added as the first column for sequential numbering.
+# Priority column removed. "#" column handles sequential numbering.
 if 'locations_df' not in st.session_state:
     df = pd.DataFrame(columns=["#", "Street", "City", "State", "Zip_Code"])
     df.loc[0] = [1, "123 ELM ST", "Denver", "CO", "80202"]
@@ -97,7 +98,7 @@ if 'locations_df' not in st.session_state:
 
 state_list = ["AL", 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC', 'SD','TN','TX','UT','VT','VA','WA', 'WV','WI','WY']
 
-# Display the data editor. The index is hidden, and the "#" column acts as the manual ID.
+# Display the data editor without index
 edited_df = st.data_editor(
     st.session_state.locations_df, 
     num_rows="dynamic", 
@@ -109,7 +110,7 @@ edited_df = st.data_editor(
     }
 )
 
-# Logic to automatically update the sequential numbering in the "#" column
+# Update sequential numbering in the "#" column automatically
 if len(edited_df) > 0:
     edited_df["#"] = range(1, len(edited_df) + 1)
 
@@ -131,7 +132,7 @@ if st.button("Submit Request", type="primary"):
             client = gspread.authorize(creds)
             sheet = client.open_by_url(st.secrets["private_gsheet_url"]).sheet1
                           
-            # 2. Process Data (Priority column handling removed)
+            # 2. Process Data
             for index, row in edited_df.iterrows():
                 street = str(row["Street"]).strip()
                 if street and street != "nan":
@@ -147,7 +148,7 @@ if st.button("Submit Request", type="primary"):
                             str(row.get("City", "")).strip(), 
                             state, 
                             str(row.get("Zip_Code", "")).strip(), 
-                            "N/A", # Placeholder for priority in sheet if column exists there
+                            "N/A", # Priority removed from UI
                             final_price
                         ])
                         valid_location_count += 1
