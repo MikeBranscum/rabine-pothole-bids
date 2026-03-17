@@ -1,5 +1,4 @@
 from typing import Any
-
 import streamlit as st
 import sqlite3
 import pandas as pd
@@ -75,28 +74,38 @@ def calculate_price_per_sf(conn, state_id, month_num):
     cursor.execute('''SELECT b.Base_Price_Per_SF, l.Labor_CCI, m.Oil_Freight_Multiplier, r.Material_Multiplier FROM tbl_Baseline_Tiers b JOIN tbl_State_Labor l ON l.State_ID = ? JOIN tbl_State_Seasonality ss ON ss.State_ID = l.State_ID AND ss.Month_Num = ? JOIN tbl_Seasonal_Rules r ON r.Season_ID = ss.Season_ID CROSS JOIN tbl_Macro_Trend m WHERE m.Is_Active = 1 AND b.Tier_ID = 1''', (state_id, month_num))
     res = cursor.fetchone()
     return round(res[0] * res[1] * res[2] * res[3], 2) if res else None
+
 # --- WEB INTERFACE (Client Facing) ---
 st.title("Asphalt Patches - Request a Quote")
 st.markdown("Please provide your information below. A Rabine member will contact you within 24-48 hours.")
 
 st.subheader("Submitted By")
-col1,col2= st.columns(2)        
-with  col1:
+col1, col2 = st.columns(2)        
+with col1:
     Contact_Person = st.text_input("Contact Person:")
 with col2:
     Contact_Email = st.text_input("Contact Email:")
+
 st.subheader("Locations")
 st.markdown("Click the **+** icon at the bottom of the table to add more entries.")
 
+# Initialize DataFrame with the correct columns, including Zip_Code
 if 'locations_df' not in st.session_state:
-    df = pd.DataFrame(columns=["Street", "City", "State", "Priority"])
-    df.loc[1]= ["123 ELM ST", "Denver", "CO", "HIGH"]
+    df = pd.DataFrame(columns=["Street", "City", "State", "Zip_Code", "Priority"])
+    df.loc[1] = ["123 ELM ST", "Denver", "CO", "80202", "HIGH"]
     st.session_state.locations_df = df
-state_list = ["AL", 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
-'SD','TN','TX','UT','VT','VA','WA', 'WV','WI','WY']
 
-edited_df = st.data_editor(st.session_state.locations_df, num_rows="dynamic", width='stretch', column_config={"State": st.column_config.SelectboxColumn("State", options=state_list, required=True), 
-"Priority": st.column_config.SelectboxColumn("Priority", options=["Moderate", "HIGH"], required=True, default="Moderate")})
+state_list = ["AL", 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC', 'SD','TN','TX','UT','VT','VA','WA', 'WV','WI','WY']
+
+edited_df = st.data_editor(
+    st.session_state.locations_df, 
+    num_rows="dynamic", 
+    width='stretch', 
+    column_config={
+        "State": st.column_config.SelectboxColumn("State", options=state_list, required=True), 
+        "Priority": st.column_config.SelectboxColumn("Priority", options=["Moderate", "HIGH"], required=True, default="Moderate")
+    }
+)
 
 # 3. Submission Engine
 if st.button("Submit Request", type="primary"):
@@ -116,8 +125,8 @@ if st.button("Submit Request", type="primary"):
             client = gspread.authorize(creds)
             sheet = client.open_by_url(st.secrets["private_gsheet_url"]).sheet1
                           
-            # 2. Process Data
-            for index, row in edited_df.iterrows(Any):
+            # 2. Process Data (Fixed iterrows)
+            for index, row in edited_df.iterrows():
                 street = str(row["Street"]).strip()
                 if street and street != "nan":
                     state = str(row["State"]).strip()
@@ -125,21 +134,30 @@ if st.button("Submit Request", type="primary"):
                     
                     if final_price:
                         sheet.append_row([
-                            timestamp,Contact_Person , Contact_Email, street, 
-                            str(row["City"]).strip(), state, str(row["Zip_Code"]).strip(), 
-                            str(row["Priority"]).strip(), final_price
+                            timestamp, 
+                            Contact_Person, 
+                            Contact_Email, 
+                            street, 
+                            str(row.get("City", "")).strip(), 
+                            state, 
+                            str(row.get("Zip_Code", "")).strip(), 
+                            str(row.get("Priority", "Moderate")).strip(), 
+                            final_price
                         ])
                         valid_location_count += 1
          
             # 3. Fire the Email Alert
-            try:
-                send_email_alert(Contact_Person, Contact_Email, valid_location_count)
-            except Exception as email_err:
-                print(f"Email failed to send: {email_err}") # Fails silently for the client
-            
-            st.success("Request submitted successfully! We have received your information.")
+            if valid_location_count > 0:
+                try:
+                    send_email_alert(Contact_Person, Contact_Email, valid_location_count)
+                except Exception as email_err:
+                    st.warning("Request logged, but notification email failed to send.")
+                
+                st.success("Request submitted successfully! We have received your information.")
+            else:
+                st.warning("No valid locations were found in the table.")
             
         except Exception as e:
-            st.error("A connection error occurred. Please contact support.")
+            st.error(f"A connection error occurred: {e}")
             
         active_db.close()
