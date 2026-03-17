@@ -44,7 +44,7 @@ def send_email_alert(client_name, client_email, location_count):
     server.quit()
 
 
-# --- DATABASE SETUP & PRICING ENGINE (Invisible to Client) ---
+# --- DATABASE SETUP & PRICING ENGINE ---
 def setup_database():
     conn = sqlite3.connect(':memory:')
     cursor = conn.cursor()
@@ -75,7 +75,7 @@ def calculate_price_per_sf(conn, state_id, month_num):
     res = cursor.fetchone()
     return round(res[0] * res[1] * res[2] * res[3], 2) if res else None
 
-# --- WEB INTERFACE (Client Facing) ---
+# --- WEB INTERFACE ---
 st.title("Asphalt Patches - Request a Quote")
 st.markdown("Please provide your information below. A Rabine member will contact you within 24-48 hours.")
 
@@ -89,23 +89,29 @@ with col2:
 st.subheader("Locations")
 st.markdown("Click the **+** icon at the bottom of the table to add more entries.")
 
-# Initialize DataFrame with the correct columns, including Zip_Code
+# Priority column removed. "#" added as the first column for sequential numbering.
 if 'locations_df' not in st.session_state:
-    df = pd.DataFrame(columns=["Street", "City", "State", "Zip_Code", "Priority"])
-    df.loc[1] = ["123 ELM ST", "Denver", "CO", "80202", "HIGH"]
+    df = pd.DataFrame(columns=["#", "Street", "City", "State", "Zip_Code"])
+    df.loc[0] = [1, "123 ELM ST", "Denver", "CO", "80202"]
     st.session_state.locations_df = df
 
 state_list = ["AL", 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC', 'SD','TN','TX','UT','VT','VA','WA', 'WV','WI','WY']
 
+# Display the data editor. The index is hidden, and the "#" column acts as the manual ID.
 edited_df = st.data_editor(
     st.session_state.locations_df, 
     num_rows="dynamic", 
     width='stretch', 
+    hide_index=True,
     column_config={
-        "State": st.column_config.SelectboxColumn("State", options=state_list, required=True), 
-        "Priority": st.column_config.SelectboxColumn("Priority", options=["Moderate", "HIGH"], required=True, default="Moderate")
+        "#": st.column_config.NumberColumn("ID", disabled=True, help="Sequential ID"),
+        "State": st.column_config.SelectboxColumn("State", options=state_list, required=True)
     }
 )
+
+# Logic to automatically update the sequential numbering in the "#" column
+if len(edited_df) > 0:
+    edited_df["#"] = range(1, len(edited_df) + 1)
 
 # 3. Submission Engine
 if st.button("Submit Request", type="primary"):
@@ -125,7 +131,7 @@ if st.button("Submit Request", type="primary"):
             client = gspread.authorize(creds)
             sheet = client.open_by_url(st.secrets["private_gsheet_url"]).sheet1
                           
-            # 2. Process Data (Fixed iterrows)
+            # 2. Process Data (Priority column handling removed)
             for index, row in edited_df.iterrows():
                 street = str(row["Street"]).strip()
                 if street and street != "nan":
@@ -141,7 +147,7 @@ if st.button("Submit Request", type="primary"):
                             str(row.get("City", "")).strip(), 
                             state, 
                             str(row.get("Zip_Code", "")).strip(), 
-                            str(row.get("Priority", "Moderate")).strip(), 
+                            "N/A", # Placeholder for priority in sheet if column exists there
                             final_price
                         ])
                         valid_location_count += 1
